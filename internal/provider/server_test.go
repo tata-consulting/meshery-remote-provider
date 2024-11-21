@@ -42,6 +42,9 @@ func TestCapabilitiesRoutes(t *testing.T) {
 		if !hasCapability(capabilities, "connections", "/api/connections") {
 			t.Fatalf("expected connections capability for %s", path)
 		}
+		if !hasCapability(capabilities, "credentials", "/api/credentials") {
+			t.Fatalf("expected credentials capability for %s", path)
+		}
 	}
 }
 
@@ -243,6 +246,68 @@ func TestConnectionsCRUD(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 after delete, got %d", rec.Code)
+	}
+}
+
+func TestCredentialsCollectionCRUD(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/credentials", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodPost, "/api/credentials", `{
+		"name":"GitHub Token",
+		"kind":"git",
+		"type":"token",
+		"sub_type":"personal-access-token",
+		"metadata":{"provider":"github"},
+		"secret":{"token":"ghp_example"}
+	}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+
+	if created["id"] == "" {
+		t.Fatalf("expected created credential id, got %#v", created["id"])
+	}
+	if created["sub_type"] != "personal-access-token" {
+		t.Fatalf("expected sub_type to be preserved, got %#v", created["sub_type"])
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/credentials", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on list, got %d", rec.Code)
+	}
+
+	var listed map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode list response: %v", err)
+	}
+
+	if listed["totalCount"] != float64(1) {
+		t.Fatalf("expected one credential in totalCount, got %#v", listed["totalCount"])
+	}
+
+	data, ok := listed["data"].([]any)
+	if !ok || len(data) != 1 {
+		t.Fatalf("expected one credential in data, got %#v", listed["data"])
 	}
 }
 

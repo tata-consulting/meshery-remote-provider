@@ -483,6 +483,51 @@ func TestEnvironmentsReadSurface(t *testing.T) {
 	}
 }
 
+func TestEnvironmentCreate(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/environments", `{
+		"name":"Staging Environment",
+		"description":"Pre-production workspace",
+		"organization_id":"7df34ef4-d478-44d6-a657-1db6c633f0cb",
+		"metadata":{"region":"us-east-1"}
+	}`)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on environment create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode environment create response: %v", err)
+	}
+
+	if created["organization_id"] != defaultOrganizationID {
+		t.Fatalf("expected organization_id alias, got %#v", created["organization_id"])
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/environments", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on environment list after create, got %d", rec.Code)
+	}
+
+	var listed map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode environment list response: %v", err)
+	}
+
+	if listed["totalCount"] != float64(2) {
+		t.Fatalf("expected two environments after create, got %#v", listed["totalCount"])
+	}
+}
+
 func authenticatedRequest(t *testing.T, server *Server, method, path, body string) *http.Request {
 	t.Helper()
 

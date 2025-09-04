@@ -69,6 +69,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/environments", s.handleEnvironments)
 	s.mux.HandleFunc("GET /api/environments/{id}", s.handleEnvironmentByID)
 	s.mux.HandleFunc("PUT /api/environments/{id}", s.handleEnvironmentByID)
+	s.mux.HandleFunc("DELETE /api/environments/{id}", s.handleEnvironmentByID)
 	s.mux.HandleFunc("GET /api/workspaces", s.handleWorkspaces)
 	s.mux.HandleFunc("GET /api/connections", s.handleConnections)
 	s.mux.HandleFunc("POST /api/connections", s.handleConnections)

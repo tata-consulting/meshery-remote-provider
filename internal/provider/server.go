@@ -25,14 +25,16 @@ type claims struct {
 }
 
 type Server struct {
-	cfg Config
-	mux *http.ServeMux
+	cfg         Config
+	mux         *http.ServeMux
+	connections *connectionStore
 }
 
 func NewServer(cfg Config) *Server {
 	server := &Server{
-		cfg: cfg,
-		mux: http.NewServeMux(),
+		cfg:         cfg,
+		mux:         http.NewServeMux(),
+		connections: newConnectionStore(),
 	}
 
 	server.routes()
@@ -56,6 +58,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/identity/orgs", s.handleOrganizations)
 	s.mux.HandleFunc("GET /api/environments", s.handleEnvironments)
 	s.mux.HandleFunc("GET /api/workspaces", s.handleWorkspaces)
+	s.mux.HandleFunc("GET /api/connections", s.handleConnections)
+	s.mux.HandleFunc("POST /api/connections", s.handleConnections)
+	s.mux.HandleFunc("GET /api/connections/{id}", s.handleConnectionByID)
+	s.mux.HandleFunc("PUT /api/connections/{id}", s.handleConnectionByID)
+	s.mux.HandleFunc("DELETE /api/connections/{id}", s.handleConnectionByID)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
@@ -72,6 +79,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			"/api/identity/orgs",
 			"/api/environments",
 			"/api/workspaces",
+			"/api/connections",
+			"/api/connections/{id}",
 		},
 	})
 }
@@ -91,6 +100,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			"Starter implementation of a Meshery Remote Provider",
 			"Development login flow that redirects back to Meshery",
 			"Authenticated profile, org, environment, and workspace stubs",
+			"Connection CRUD endpoints for remote provider development",
 			"Ready to replace with a production IdP and persistence APIs",
 		},
 		"providerUrl": providerURL,
@@ -100,6 +110,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			{"feature": "organizations", "endpoint": "/api/identity/orgs"},
 			{"feature": "environments", "endpoint": "/api/environments"},
 			{"feature": "workspaces", "endpoint": "/api/workspaces"},
+			{"feature": "connections", "endpoint": "/api/connections"},
 		},
 		"restrictedAccess": map[string]any{
 			"isMesheryUIRestricted": false,

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -31,6 +32,15 @@ func TestCapabilitiesRoutes(t *testing.T) {
 
 		if payload["providerName"] != "Tata Consulting" {
 			t.Fatalf("unexpected provider name for %s: %#v", path, payload["providerName"])
+		}
+
+		capabilities, ok := payload["capabilities"].([]any)
+		if !ok {
+			t.Fatalf("unexpected capabilities payload for %s: %#v", path, payload["capabilities"])
+		}
+
+		if !hasCapability(capabilities, "connections", "/api/connections") {
+			t.Fatalf("expected connections capability for %s", path)
 		}
 	}
 }
@@ -118,4 +128,150 @@ func TestProfileRequiresValidBearerToken(t *testing.T) {
 	if payload["userId"] != cfg.DefaultUser.UserID {
 		t.Fatalf("unexpected userId: %#v", payload["userId"])
 	}
+}
+
+func TestConnectionsCRUD(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/connections", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodPost, "/api/connections", `{
+		"name":"Production Cluster",
+		"kind":"kubernetes",
+		"type":"platform",
+		"sub_type":"orchestrator",
+		"status":"connected",
+		"credential_id":"4b0bcdb1-55ad-4753-bcf2-c6f8af4eca61",
+		"metadata":{"server":"https://cluster.example.com","namespace":"meshery"}
+	}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+
+	connectionID, ok := created["id"].(string)
+	if !ok || connectionID == "" {
+		t.Fatalf("expected created connection id, got %#v", created["id"])
+	}
+	if created["sub_type"] != "orchestrator" {
+		t.Fatalf("expected sub_type to be preserved, got %#v", created["sub_type"])
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/connections?page=1&pageSize=10&search=production", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on list, got %d", rec.Code)
+	}
+
+	var listed map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode list response: %v", err)
+	}
+
+	if listed["totalCount"] != float64(1) {
+		t.Fatalf("expected one connection in totalCount, got %#v", listed["totalCount"])
+	}
+
+	data, ok := listed["data"].([]any)
+	if !ok || len(data) != 1 {
+		t.Fatalf("expected one connection in data, got %#v", listed["data"])
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/connections/"+connectionID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/connections/"+connectionID, `{
+		"name":"Staging Cluster",
+		"status":"maintenance",
+		"credentialId":"f05d1c4e-121e-490a-a1cc-bda2642f1c1f",
+		"metadata":{"server":"https://staging.example.com","namespace":"meshery-system"}
+	}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on update, got %d", rec.Code)
+	}
+
+	var updated map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("failed to decode update response: %v", err)
+	}
+
+	if updated["name"] != "Staging Cluster" {
+		t.Fatalf("expected updated name, got %#v", updated["name"])
+	}
+	if updated["status"] != "maintenance" {
+		t.Fatalf("expected updated status, got %#v", updated["status"])
+	}
+	if updated["credential_id"] != "f05d1c4e-121e-490a-a1cc-bda2642f1c1f" {
+		t.Fatalf("expected updated credential id, got %#v", updated["credential_id"])
+	}
+
+	req = authenticatedRequest(t, server, http.MethodDelete, "/api/connections/"+connectionID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on delete, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/connections/"+connectionID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 after delete, got %d", rec.Code)
+	}
+}
+
+func authenticatedRequest(t *testing.T, server *Server, method, path, body string) *http.Request {
+	t.Helper()
+
+	token, err := server.mintToken()
+	if err != nil {
+		t.Fatalf("failed to mint token: %v", err)
+	}
+
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	return req
+}
+
+func hasCapability(capabilities []any, feature, endpoint string) bool {
+	for _, item := range capabilities {
+		capability, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if capability["feature"] == feature && capability["endpoint"] == endpoint {
+			return true
+		}
+	}
+
+	return false
 }

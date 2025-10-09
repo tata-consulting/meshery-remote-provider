@@ -572,6 +572,63 @@ func TestEnvironmentUpdate(t *testing.T) {
 	}
 }
 
+func TestEnvironmentsListSupportsSearchAndDelete(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/environments", `{
+		"name":"Preview Environment",
+		"description":"Ephemeral environment",
+		"metadata":{"region":"eu-west-1"}
+	}`)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on environment create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode environment create response: %v", err)
+	}
+
+	environmentID := created["id"].(string)
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/environments?search=preview&page=1&pageSize=1", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on filtered environment list, got %d", rec.Code)
+	}
+
+	var listed map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode filtered environment list response: %v", err)
+	}
+
+	if listed["totalCount"] != float64(1) {
+		t.Fatalf("expected one filtered environment, got %#v", listed["totalCount"])
+	}
+	if listed["page_size"] != float64(1) {
+		t.Fatalf("expected page_size alias, got %#v", listed["page_size"])
+	}
+
+	req = authenticatedRequest(t, server, http.MethodDelete, "/api/environments/"+environmentID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on environment delete, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/environments/"+environmentID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on deleted environment lookup, got %d", rec.Code)
+	}
+}
+
 func authenticatedRequest(t *testing.T, server *Server, method, path, body string) *http.Request {
 	t.Helper()
 

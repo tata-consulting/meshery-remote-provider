@@ -23,6 +23,7 @@ It also includes a small authenticated surface for the capabilities it advertise
 - `POST /api/environments`
 - `GET /api/environments/{id}`
 - `PUT /api/environments/{id}`
+- `DELETE /api/environments/{id}`
 - `GET /api/workspaces`
 - `GET /api/connections`
 - `POST /api/connections`
@@ -49,6 +50,8 @@ The starter provider now exposes an authenticated in-memory Connections API for 
 Connection payloads accept both Meshery-style snake_case fields like `sub_type` and `credential_id` and camelCase variants like `subType` and `credentialId`.
 
 Credential collection requests support `page`, `pageSize`, `pagesize`, `search`, and `q` query parameters, and the list response includes both camelCase and snake_case pagination keys.
+
+Environment collection requests support the same pagination and search query parameters as credentials and connections, and the item endpoint now supports deletion.
 
 ## Run locally
 

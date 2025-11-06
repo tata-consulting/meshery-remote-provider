@@ -213,15 +213,7 @@ func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 			responsePageSize = len(responseItems)
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{
-			"page":         page,
-			"pageSize":     responsePageSize,
-			"page_size":    responsePageSize,
-			"totalCount":   total,
-			"total_count":  total,
-			"data":         responseItems,
-			"environments": responseItems,
-		})
+		writeJSON(w, http.StatusOK, buildPaginatedResponse(page, responsePageSize, total, "environments", responseItems))
 	case http.MethodPost:
 		var req environmentCreateRequest
 		if err := decodeJSONBody(r.Body, &req); err != nil {

@@ -53,6 +53,14 @@ Credential collection requests support `page`, `pageSize`, `pagesize`, `search`,
 
 Environment collection requests support the same pagination and search query parameters as credentials and connections, and the item endpoint now supports deletion.
 
+## Credentials CRUD
+
+Credentials are stored in-memory for development. The API supports create, list, read, update, and delete operations across `/api/credentials` and `/api/credentials/{id}` and accepts both `subType` and `sub_type`.
+
+## Environments CRUD
+
+Environments are also stored in-memory for development. The API seeds a default environment, supports full CRUD at `/api/environments` and `/api/environments/{id}`, and accepts both `organizationId` and `organization_id`.
+
 ## Run locally
 
 ```bash

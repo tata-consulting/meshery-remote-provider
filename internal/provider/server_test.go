@@ -45,6 +45,9 @@ func TestCapabilitiesRoutes(t *testing.T) {
 		if !hasCapability(capabilities, "credentials", "/api/credentials") {
 			t.Fatalf("expected credentials capability for %s", path)
 		}
+		if !hasCapability(capabilities, "environments", "/api/environments") {
+			t.Fatalf("expected environments capability for %s", path)
+		}
 	}
 }
 
@@ -626,6 +629,71 @@ func TestEnvironmentsListSupportsSearchAndDelete(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 on deleted environment lookup, got %d", rec.Code)
+	}
+}
+
+func TestCredentialValidation(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/credentials", `{"name":"","kind":"git","type":"token"}`)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid credential create, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodPost, "/api/credentials", `{"name":"Valid","kind":"git","type":"token"}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on valid credential create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode credential create response: %v", err)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/credentials/"+created["id"].(string), `{"type":""}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid credential update, got %d", rec.Code)
+	}
+}
+
+func TestEnvironmentValidation(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/environments", `{"description":"missing name"}`)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid environment create, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/environments", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on environment list, got %d", rec.Code)
+	}
+
+	var listed map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode environment list response: %v", err)
+	}
+
+	item := listed["data"].([]any)[0].(map[string]any)
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/environments/"+item["id"].(string), `{"name":""}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid environment update, got %d", rec.Code)
 	}
 }
 

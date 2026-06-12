@@ -73,3 +73,5 @@ For a production remote provider, replace the development login flow with your r
 2. Returning real organizations, workspaces, environments, and user data.
 3. Serving extension packages if you want provider-backed Meshery UI extensions.
 4. Adding token refresh and introspection endpoints if your deployment requires them.
+
+Note: the canonical base_url is just that - an example, but it can be overridden at deploy time.

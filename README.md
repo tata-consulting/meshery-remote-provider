@@ -14,6 +14,8 @@ It also includes a small authenticated surface for the capabilities it advertise
 - `GET /api/identity/users/profile`
 - `GET /api/users`
 - `GET /api/identity/orgs`
+- `GET /api/credentials`
+- `POST /api/credentials`
 - `GET /api/environments`
 - `GET /api/workspaces`
 - `GET /api/connections`

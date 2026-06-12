@@ -120,7 +120,7 @@ func (s *connectionStore) count(search string) int {
 
 func (s *connectionStore) create(req connectionCreateRequest) (connectionRecord, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	id, err := newConnectionID()
+	id, err := newResourceID()
 	if err != nil {
 		return connectionRecord{}, err
 	}
@@ -495,7 +495,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func newConnectionID() (string, error) {
+func newResourceID() (string, error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err

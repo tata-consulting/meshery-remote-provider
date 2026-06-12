@@ -28,6 +28,7 @@ type Server struct {
 	cfg         Config
 	mux         *http.ServeMux
 	connections *connectionStore
+	credentials *credentialStore
 }
 
 func NewServer(cfg Config) *Server {
@@ -35,6 +36,7 @@ func NewServer(cfg Config) *Server {
 		cfg:         cfg,
 		mux:         http.NewServeMux(),
 		connections: newConnectionStore(),
+		credentials: newCredentialStore(),
 	}
 
 	server.routes()
@@ -56,6 +58,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/identity/users/profile", s.handleProfile)
 	s.mux.HandleFunc("GET /api/users", s.handleUsers)
 	s.mux.HandleFunc("GET /api/identity/orgs", s.handleOrganizations)
+	s.mux.HandleFunc("GET /api/credentials", s.handleCredentials)
+	s.mux.HandleFunc("POST /api/credentials", s.handleCredentials)
 	s.mux.HandleFunc("GET /api/environments", s.handleEnvironments)
 	s.mux.HandleFunc("GET /api/workspaces", s.handleWorkspaces)
 	s.mux.HandleFunc("GET /api/connections", s.handleConnections)
@@ -77,6 +81,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			"/api/identity/users/profile",
 			"/api/users",
 			"/api/identity/orgs",
+			"/api/credentials",
 			"/api/environments",
 			"/api/workspaces",
 			"/api/connections",
@@ -99,7 +104,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		"providerDescription": []string{
 			"Starter implementation of a Meshery Remote Provider",
 			"Development login flow that redirects back to Meshery",
-			"Authenticated profile, org, environment, and workspace stubs",
+			"Authenticated profile, credential, environment, and workspace stubs",
 			"Connection CRUD endpoints for remote provider development",
 			"Ready to replace with a production IdP and persistence APIs",
 		},
@@ -108,6 +113,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			{"feature": "users-profile", "endpoint": "/api/identity/users/profile"},
 			{"feature": "users-identity", "endpoint": "/api/users"},
 			{"feature": "organizations", "endpoint": "/api/identity/orgs"},
+			{"feature": "credentials", "endpoint": "/api/credentials"},
 			{"feature": "environments", "endpoint": "/api/environments"},
 			{"feature": "workspaces", "endpoint": "/api/workspaces"},
 			{"feature": "connections", "endpoint": "/api/connections"},

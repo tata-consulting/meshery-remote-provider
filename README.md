@@ -20,6 +20,7 @@ It also includes a small authenticated surface for the capabilities it advertise
 - `PUT /api/credentials/{id}`
 - `DELETE /api/credentials/{id}`
 - `GET /api/environments`
+- `GET /api/environments/{id}`
 - `GET /api/workspaces`
 - `GET /api/connections`
 - `POST /api/connections`

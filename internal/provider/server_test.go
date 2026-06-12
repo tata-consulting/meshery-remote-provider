@@ -432,6 +432,57 @@ func TestCredentialsListSupportsSearchAndPagination(t *testing.T) {
 	}
 }
 
+func TestEnvironmentsReadSurface(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/environments", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/environments", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on environment list, got %d", rec.Code)
+	}
+
+	var listed map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode environment list response: %v", err)
+	}
+
+	if listed["totalCount"] != float64(1) {
+		t.Fatalf("expected one seeded environment, got %#v", listed["totalCount"])
+	}
+
+	data, ok := listed["data"].([]any)
+	if !ok || len(data) != 1 {
+		t.Fatalf("expected one environment in data, got %#v", listed["data"])
+	}
+
+	item, ok := data[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected environment payload: %#v", data[0])
+	}
+
+	environmentID, ok := item["id"].(string)
+	if !ok || environmentID == "" {
+		t.Fatalf("expected environment id, got %#v", item["id"])
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/environments/"+environmentID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on environment get, got %d", rec.Code)
+	}
+}
+
 func authenticatedRequest(t *testing.T, server *Server, method, path, body string) *http.Request {
 	t.Helper()
 

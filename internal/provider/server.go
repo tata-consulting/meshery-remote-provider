@@ -60,6 +60,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/identity/orgs", s.handleOrganizations)
 	s.mux.HandleFunc("GET /api/credentials", s.handleCredentials)
 	s.mux.HandleFunc("POST /api/credentials", s.handleCredentials)
+	s.mux.HandleFunc("GET /api/credentials/{id}", s.handleCredentialByID)
+	s.mux.HandleFunc("PUT /api/credentials/{id}", s.handleCredentialByID)
+	s.mux.HandleFunc("DELETE /api/credentials/{id}", s.handleCredentialByID)
 	s.mux.HandleFunc("GET /api/environments", s.handleEnvironments)
 	s.mux.HandleFunc("GET /api/workspaces", s.handleWorkspaces)
 	s.mux.HandleFunc("GET /api/connections", s.handleConnections)
@@ -82,6 +85,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			"/api/users",
 			"/api/identity/orgs",
 			"/api/credentials",
+			"/api/credentials/{id}",
 			"/api/environments",
 			"/api/workspaces",
 			"/api/connections",

@@ -311,6 +311,84 @@ func TestCredentialsCollectionCRUD(t *testing.T) {
 	}
 }
 
+func TestCredentialItemCRUD(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/credentials", `{
+		"name":"Cluster Token",
+		"kind":"kubernetes",
+		"type":"bearer",
+		"metadata":{"cluster":"prod"},
+		"secret":{"token":"token-1"}
+	}`)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+
+	credentialID, ok := created["id"].(string)
+	if !ok || credentialID == "" {
+		t.Fatalf("expected created credential id, got %#v", created["id"])
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/credentials/"+credentialID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/credentials/"+credentialID, `{
+		"name":"Cluster Token Rotated",
+		"subType":"service-account",
+		"secret":{"token":"token-2"}
+	}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on update, got %d", rec.Code)
+	}
+
+	var updated map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("failed to decode update response: %v", err)
+	}
+
+	if updated["name"] != "Cluster Token Rotated" {
+		t.Fatalf("expected updated name, got %#v", updated["name"])
+	}
+	if updated["sub_type"] != "service-account" {
+		t.Fatalf("expected updated sub_type, got %#v", updated["sub_type"])
+	}
+
+	req = authenticatedRequest(t, server, http.MethodDelete, "/api/credentials/"+credentialID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on delete, got %d", rec.Code)
+	}
+
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/credentials/"+credentialID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 after delete, got %d", rec.Code)
+	}
+}
+
 func authenticatedRequest(t *testing.T, server *Server, method, path, body string) *http.Request {
 	t.Helper()
 

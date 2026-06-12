@@ -16,6 +16,11 @@ It also includes a small authenticated surface for the capabilities it advertise
 - `GET /api/identity/orgs`
 - `GET /api/environments`
 - `GET /api/workspaces`
+- `GET /api/connections`
+- `POST /api/connections`
+- `GET /api/connections/{id}`
+- `PUT /api/connections/{id}`
+- `DELETE /api/connections/{id}`
 
 ## What this scaffold is
 
@@ -24,6 +29,16 @@ This is a starter provider, not a full production identity platform. The login f
 1. Meshery redirects the browser to `/login?source=<base64-meshery-callback-base-url>`.
 2. The provider issues a development token and provider session cookie.
 3. The provider redirects back to Meshery at `/api/user/token` with `token` and `session_cookie` query parameters.
+
+## Connections CRUD
+
+The starter provider now exposes an authenticated in-memory Connections API for local development and remote-provider contract testing.
+
+- `GET /api/connections` returns paginated connection data and supports `page`, `pageSize`, `pagesize`, `search`, and `q` query parameters.
+- `POST /api/connections` creates a connection from JSON input.
+- `GET`, `PUT`, and `DELETE /api/connections/{id}` fetch, update, and remove individual connections.
+
+Connection payloads accept both Meshery-style snake_case fields like `sub_type` and `credential_id` and camelCase variants like `subType` and `credentialId`.
 
 ## Run locally
 

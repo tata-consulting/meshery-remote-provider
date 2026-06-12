@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -62,12 +63,16 @@ func newEnvironmentStore() *environmentStore {
 	}
 }
 
-func (s *environmentStore) list() []environmentRecord {
+func (s *environmentStore) list(page, pageSize int, search string) []environmentRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	needle := strings.ToLower(strings.TrimSpace(search))
 	items := make([]environmentRecord, 0, len(s.items))
 	for _, item := range s.items {
+		if needle != "" && !environmentMatchesSearch(item, needle) {
+			continue
+		}
 		items = append(items, item)
 	}
 
@@ -75,7 +80,24 @@ func (s *environmentStore) list() []environmentRecord {
 		return items[i].CreatedAt < items[j].CreatedAt
 	})
 
-	return items
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		return items
+	}
+
+	start := (page - 1) * pageSize
+	if start >= len(items) {
+		return []environmentRecord{}
+	}
+
+	end := start + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+
+	return items[start:end]
 }
 
 func (s *environmentStore) get(id string) (environmentRecord, bool) {
@@ -84,6 +106,22 @@ func (s *environmentStore) get(id string) (environmentRecord, bool) {
 
 	item, ok := s.items[id]
 	return item, ok
+}
+
+func (s *environmentStore) count(search string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	needle := strings.ToLower(strings.TrimSpace(search))
+	total := 0
+	for _, item := range s.items {
+		if needle != "" && !environmentMatchesSearch(item, needle) {
+			continue
+		}
+		total++
+	}
+
+	return total
 }
 
 func (s *environmentStore) create(req environmentCreateRequest) (environmentRecord, error) {
@@ -137,6 +175,18 @@ func (s *environmentStore) update(id string, req environmentUpdateRequest) (envi
 	return item, true
 }
 
+func (s *environmentStore) delete(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.items[id]; !ok {
+		return false
+	}
+
+	delete(s.items, id)
+	return true
+}
+
 func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 	_, err := s.currentUser(r)
 	if err != nil {
@@ -146,18 +196,29 @@ func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		items := s.environments.list()
+		query := r.URL.Query()
+		page := parsePositiveInt(query.Get("page"), 1)
+		pageSize := parsePositiveInt(firstNonEmpty(query.Get("pageSize"), query.Get("pagesize")), 0)
+		search := firstNonEmpty(query.Get("search"), query.Get("q"))
+
+		items := s.environments.list(page, pageSize, search)
+		total := s.environments.count(search)
 		responseItems := make([]map[string]any, 0, len(items))
 		for _, item := range items {
 			responseItems = append(responseItems, item.response())
 		}
 
+		responsePageSize := pageSize
+		if pageSize == 0 {
+			responsePageSize = len(responseItems)
+		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
-			"page":         1,
-			"pageSize":     len(responseItems),
-			"page_size":    len(responseItems),
-			"totalCount":   len(responseItems),
-			"total_count":  len(responseItems),
+			"page":         page,
+			"pageSize":     responsePageSize,
+			"page_size":    responsePageSize,
+			"totalCount":   total,
+			"total_count":  total,
 			"data":         responseItems,
 			"environments": responseItems,
 		})
@@ -228,8 +289,15 @@ func (s *Server) handleEnvironmentByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		writeJSON(w, http.StatusOK, item.response())
+	case http.MethodDelete:
+		if !s.environments.delete(id) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "environment not found"})
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	default:
-		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))
+		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut, http.MethodDelete}, ", "))
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
 }
@@ -288,4 +356,24 @@ func validateUpdateEnvironment(req environmentUpdateRequest) error {
 	}
 
 	return nil
+}
+
+func environmentMatchesSearch(item environmentRecord, needle string) bool {
+	fields := []string{item.ID, item.Name, item.Description, item.OrganizationID}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), needle) {
+			return true
+		}
+	}
+
+	for key, value := range item.Metadata {
+		if strings.Contains(strings.ToLower(key), needle) {
+			return true
+		}
+		if strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
+			return true
+		}
+	}
+
+	return false
 }

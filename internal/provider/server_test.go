@@ -389,6 +389,49 @@ func TestCredentialItemCRUD(t *testing.T) {
 	}
 }
 
+func TestCredentialsListSupportsSearchAndPagination(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	for _, payload := range []string{
+		`{"name":"GitHub PAT","kind":"git","type":"token","metadata":{"provider":"github"},"secret":{"token":"one"}}`,
+		`{"name":"GitLab PAT","kind":"git","type":"token","metadata":{"provider":"gitlab"},"secret":{"token":"two"}}`,
+	} {
+		req := authenticatedRequest(t, server, http.MethodPost, "/api/credentials", payload)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201 on create, got %d", rec.Code)
+		}
+	}
+
+	req := authenticatedRequest(t, server, http.MethodGet, "/api/credentials?search=github&page=1&pageSize=1", "")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on filtered list, got %d", rec.Code)
+	}
+
+	var listed map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode filtered list response: %v", err)
+	}
+
+	if listed["totalCount"] != float64(1) {
+		t.Fatalf("expected one credential in filtered totalCount, got %#v", listed["totalCount"])
+	}
+	if listed["page_size"] != float64(1) {
+		t.Fatalf("expected page_size alias, got %#v", listed["page_size"])
+	}
+
+	data, ok := listed["data"].([]any)
+	if !ok || len(data) != 1 {
+		t.Fatalf("expected one filtered credential, got %#v", listed["data"])
+	}
+}
+
 func authenticatedRequest(t *testing.T, server *Server, method, path, body string) *http.Request {
 	t.Helper()
 

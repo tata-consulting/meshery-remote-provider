@@ -45,6 +45,8 @@ The starter provider now exposes an authenticated in-memory Connections API for 
 
 Connection payloads accept both Meshery-style snake_case fields like `sub_type` and `credential_id` and camelCase variants like `subType` and `credentialId`.
 
+Credential collection requests support `page`, `pageSize`, `pagesize`, `search`, and `q` query parameters, and the list response includes both camelCase and snake_case pagination keys.
+
 ## Run locally
 
 ```bash

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -52,12 +53,16 @@ func newCredentialStore() *credentialStore {
 	}
 }
 
-func (s *credentialStore) list() []credentialRecord {
+func (s *credentialStore) list(page, pageSize int, search string) []credentialRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	needle := strings.ToLower(strings.TrimSpace(search))
 	items := make([]credentialRecord, 0, len(s.items))
 	for _, item := range s.items {
+		if needle != "" && !credentialMatchesSearch(item, needle) {
+			continue
+		}
 		items = append(items, item)
 	}
 
@@ -65,7 +70,40 @@ func (s *credentialStore) list() []credentialRecord {
 		return items[i].CreatedAt < items[j].CreatedAt
 	})
 
-	return items
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		return items
+	}
+
+	start := (page - 1) * pageSize
+	if start >= len(items) {
+		return []credentialRecord{}
+	}
+
+	end := start + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+
+	return items[start:end]
+}
+
+func (s *credentialStore) count(search string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	needle := strings.ToLower(strings.TrimSpace(search))
+	total := 0
+	for _, item := range s.items {
+		if needle != "" && !credentialMatchesSearch(item, needle) {
+			continue
+		}
+		total++
+	}
+
+	return total
 }
 
 func (s *credentialStore) create(req credentialCreateRequest) (credentialRecord, error) {
@@ -156,16 +194,29 @@ func (s *Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		items := s.credentials.list()
+		query := r.URL.Query()
+		page := parsePositiveInt(query.Get("page"), 1)
+		pageSize := parsePositiveInt(firstNonEmpty(query.Get("pageSize"), query.Get("pagesize")), 0)
+		search := firstNonEmpty(query.Get("search"), query.Get("q"))
+
+		items := s.credentials.list(page, pageSize, search)
+		total := s.credentials.count(search)
 		responseItems := make([]map[string]any, 0, len(items))
 		for _, item := range items {
 			responseItems = append(responseItems, item.response())
 		}
 
+		responsePageSize := pageSize
+		if pageSize == 0 {
+			responsePageSize = len(responseItems)
+		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
-			"page":        1,
-			"pageSize":    len(responseItems),
-			"totalCount":  len(responseItems),
+			"page":        page,
+			"pageSize":    responsePageSize,
+			"page_size":   responsePageSize,
+			"totalCount":  total,
+			"total_count": total,
 			"data":        responseItems,
 			"credentials": responseItems,
 		})
@@ -315,4 +366,33 @@ func validateUpdateCredential(req credentialUpdateRequest) error {
 	}
 
 	return nil
+}
+
+func credentialMatchesSearch(item credentialRecord, needle string) bool {
+	fields := []string{item.ID, item.Name, item.Kind, item.Type, item.SubType}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), needle) {
+			return true
+		}
+	}
+
+	for key, value := range item.Metadata {
+		if strings.Contains(strings.ToLower(key), needle) {
+			return true
+		}
+		if strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
+			return true
+		}
+	}
+
+	for key, value := range item.Secret {
+		if strings.Contains(strings.ToLower(key), needle) {
+			return true
+		}
+		if strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
+			return true
+		}
+	}
+
+	return false
 }

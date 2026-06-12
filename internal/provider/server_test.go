@@ -528,6 +528,50 @@ func TestEnvironmentCreate(t *testing.T) {
 	}
 }
 
+func TestEnvironmentUpdate(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	req := authenticatedRequest(t, server, http.MethodGet, "/api/environments", "")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on environment list, got %d", rec.Code)
+	}
+
+	var listed map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode environment list response: %v", err)
+	}
+
+	data := listed["data"].([]any)
+	item := data[0].(map[string]any)
+	environmentID := item["id"].(string)
+
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/environments/"+environmentID, `{
+		"name":"Default Environment Updated",
+		"description":"Updated description",
+		"organizationId":"7df34ef4-d478-44d6-a657-1db6c633f0cb",
+		"metadata":{"workspaceId":"f893c289-5587-4c54-a8ff-d291f626d6f5","provider":"remote","region":"us-west-2"}
+	}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on environment update, got %d", rec.Code)
+	}
+
+	var updated map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("failed to decode environment update response: %v", err)
+	}
+
+	if updated["name"] != "Default Environment Updated" {
+		t.Fatalf("expected updated environment name, got %#v", updated["name"])
+	}
+}
+
 func authenticatedRequest(t *testing.T, server *Server, method, path, body string) *http.Request {
 	t.Helper()
 

@@ -22,6 +22,7 @@ It also includes a small authenticated surface for the capabilities it advertise
 - `GET /api/environments`
 - `POST /api/environments`
 - `GET /api/environments/{id}`
+- `PUT /api/environments/{id}`
 - `GET /api/workspaces`
 - `GET /api/connections`
 - `POST /api/connections`

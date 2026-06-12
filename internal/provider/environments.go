@@ -27,6 +27,14 @@ type environmentCreateRequest struct {
 	Metadata           map[string]any `json:"metadata"`
 }
 
+type environmentUpdateRequest struct {
+	Name               *string         `json:"name"`
+	Description        *string         `json:"description"`
+	OrganizationID     *string         `json:"organizationId"`
+	LegacyOrganization *string         `json:"organization_id"`
+	Metadata           *map[string]any `json:"metadata"`
+}
+
 type environmentStore struct {
 	mu    sync.RWMutex
 	items map[string]environmentRecord
@@ -102,6 +110,33 @@ func (s *environmentStore) create(req environmentCreateRequest) (environmentReco
 	return item, nil
 }
 
+func (s *environmentStore) update(id string, req environmentUpdateRequest) (environmentRecord, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item, ok := s.items[id]
+	if !ok {
+		return environmentRecord{}, false
+	}
+
+	if req.Name != nil {
+		item.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Description != nil {
+		item.Description = strings.TrimSpace(*req.Description)
+	}
+	if organizationID, exists := req.normalizedOrganizationID(); exists {
+		item.OrganizationID = strings.TrimSpace(organizationID)
+	}
+	if req.Metadata != nil {
+		item.Metadata = cloneMap(*req.Metadata)
+	}
+	item.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+
+	s.items[id] = item
+	return item, true
+}
+
 func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 	_, err := s.currentUser(r)
 	if err != nil {
@@ -166,12 +201,37 @@ func (s *Server) handleEnvironmentByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item, ok := s.environments.get(id)
-	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "environment not found"})
-		return
-	}
+	switch r.Method {
+	case http.MethodGet:
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "environment not found"})
+			return
+		}
 
-	writeJSON(w, http.StatusOK, item.response())
+		writeJSON(w, http.StatusOK, item.response())
+	case http.MethodPut:
+		var req environmentUpdateRequest
+		if err := decodeJSONBody(r.Body, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		if err := validateUpdateEnvironment(req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		item, ok := s.environments.update(id, req)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "environment not found"})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, item.response())
+	default:
+		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
 }
 
 func (e environmentRecord) response() map[string]any {
@@ -203,9 +263,28 @@ func (e environmentCreateRequest) normalizedOrganizationID() string {
 	return defaultOrganizationID
 }
 
+func (e environmentUpdateRequest) normalizedOrganizationID() (string, bool) {
+	if e.OrganizationID != nil {
+		return *e.OrganizationID, true
+	}
+	if e.LegacyOrganization != nil {
+		return *e.LegacyOrganization, true
+	}
+
+	return "", false
+}
+
 func validateCreateEnvironment(req environmentCreateRequest) error {
 	if strings.TrimSpace(req.Name) == "" {
 		return errors.New("name is required")
+	}
+
+	return nil
+}
+
+func validateUpdateEnvironment(req environmentUpdateRequest) error {
+	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
+		return errors.New("name cannot be empty")
 	}
 
 	return nil

@@ -211,15 +211,7 @@ func (s *Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
 			responsePageSize = len(responseItems)
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{
-			"page":        page,
-			"pageSize":    responsePageSize,
-			"page_size":   responsePageSize,
-			"totalCount":  total,
-			"total_count": total,
-			"data":        responseItems,
-			"credentials": responseItems,
-		})
+		writeJSON(w, http.StatusOK, buildPaginatedResponse(page, responsePageSize, total, "credentials", responseItems))
 	case http.MethodPost:
 		var req credentialCreateRequest
 		if err := decodeJSONBody(r.Body, &req); err != nil {

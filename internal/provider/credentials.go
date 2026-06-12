@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -31,6 +32,16 @@ type credentialCreateRequest struct {
 	Secret        map[string]any `json:"secret"`
 }
 
+type credentialUpdateRequest struct {
+	Name          *string         `json:"name"`
+	Kind          *string         `json:"kind"`
+	Type          *string         `json:"type"`
+	SubType       *string         `json:"subType"`
+	LegacySubType *string         `json:"sub_type"`
+	Metadata      *map[string]any `json:"metadata"`
+	Secret        *map[string]any `json:"secret"`
+}
+
 type credentialStore struct {
 	mu    sync.RWMutex
 	items map[string]credentialRecord
@@ -42,12 +53,16 @@ func newCredentialStore() *credentialStore {
 	}
 }
 
-func (s *credentialStore) list() []credentialRecord {
+func (s *credentialStore) list(page, pageSize int, search string) []credentialRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	needle := strings.ToLower(strings.TrimSpace(search))
 	items := make([]credentialRecord, 0, len(s.items))
 	for _, item := range s.items {
+		if needle != "" && !credentialMatchesSearch(item, needle) {
+			continue
+		}
 		items = append(items, item)
 	}
 
@@ -55,7 +70,40 @@ func (s *credentialStore) list() []credentialRecord {
 		return items[i].CreatedAt < items[j].CreatedAt
 	})
 
-	return items
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		return items
+	}
+
+	start := (page - 1) * pageSize
+	if start >= len(items) {
+		return []credentialRecord{}
+	}
+
+	end := start + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+
+	return items[start:end]
+}
+
+func (s *credentialStore) count(search string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	needle := strings.ToLower(strings.TrimSpace(search))
+	total := 0
+	for _, item := range s.items {
+		if needle != "" && !credentialMatchesSearch(item, needle) {
+			continue
+		}
+		total++
+	}
+
+	return total
 }
 
 func (s *credentialStore) create(req credentialCreateRequest) (credentialRecord, error) {
@@ -84,6 +132,59 @@ func (s *credentialStore) create(req credentialCreateRequest) (credentialRecord,
 	return item, nil
 }
 
+func (s *credentialStore) get(id string) (credentialRecord, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	item, ok := s.items[id]
+	return item, ok
+}
+
+func (s *credentialStore) update(id string, req credentialUpdateRequest) (credentialRecord, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item, ok := s.items[id]
+	if !ok {
+		return credentialRecord{}, false
+	}
+
+	if req.Name != nil {
+		item.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Kind != nil {
+		item.Kind = strings.TrimSpace(*req.Kind)
+	}
+	if req.Type != nil {
+		item.Type = strings.TrimSpace(*req.Type)
+	}
+	if subType, exists := req.normalizedSubType(); exists {
+		item.SubType = strings.TrimSpace(subType)
+	}
+	if req.Metadata != nil {
+		item.Metadata = cloneMap(*req.Metadata)
+	}
+	if req.Secret != nil {
+		item.Secret = cloneMap(*req.Secret)
+	}
+	item.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+
+	s.items[id] = item
+	return item, true
+}
+
+func (s *credentialStore) delete(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.items[id]; !ok {
+		return false
+	}
+
+	delete(s.items, id)
+	return true
+}
+
 func (s *Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
 	_, err := s.currentUser(r)
 	if err != nil {
@@ -93,19 +194,24 @@ func (s *Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		items := s.credentials.list()
+		query := r.URL.Query()
+		page := parsePositiveInt(query.Get("page"), 1)
+		pageSize := parsePositiveInt(firstNonEmpty(query.Get("pageSize"), query.Get("pagesize")), 0)
+		search := firstNonEmpty(query.Get("search"), query.Get("q"))
+
+		items := s.credentials.list(page, pageSize, search)
+		total := s.credentials.count(search)
 		responseItems := make([]map[string]any, 0, len(items))
 		for _, item := range items {
 			responseItems = append(responseItems, item.response())
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{
-			"page":        1,
-			"pageSize":    len(responseItems),
-			"totalCount":  len(responseItems),
-			"data":        responseItems,
-			"credentials": responseItems,
-		})
+		responsePageSize := pageSize
+		if pageSize == 0 {
+			responsePageSize = len(responseItems)
+		}
+
+		writeJSON(w, http.StatusOK, buildPaginatedResponse(page, responsePageSize, total, "credentials", responseItems))
 	case http.MethodPost:
 		var req credentialCreateRequest
 		if err := decodeJSONBody(r.Body, &req); err != nil {
@@ -132,12 +238,77 @@ func (s *Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleCredentialByID(w http.ResponseWriter, r *http.Request) {
+	_, err := s.currentUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing credential id"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		item, ok := s.credentials.get(id)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential not found"})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, item.response())
+	case http.MethodPut:
+		var req credentialUpdateRequest
+		if err := decodeJSONBody(r.Body, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		if err := validateUpdateCredential(req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		item, ok := s.credentials.update(id, req)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential not found"})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, item.response())
+	case http.MethodDelete:
+		if !s.credentials.delete(id) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential not found"})
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut, http.MethodDelete}, ", "))
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
 func (c credentialCreateRequest) normalizedSubType() string {
 	if strings.TrimSpace(c.SubType) != "" {
 		return c.SubType
 	}
 
 	return c.LegacySubType
+}
+
+func (c credentialUpdateRequest) normalizedSubType() (string, bool) {
+	if c.SubType != nil {
+		return *c.SubType, true
+	}
+	if c.LegacySubType != nil {
+		return *c.LegacySubType, true
+	}
+
+	return "", false
 }
 
 func (c credentialRecord) response() map[string]any {
@@ -173,4 +344,47 @@ func validateCreateCredential(req credentialCreateRequest) error {
 	default:
 		return nil
 	}
+}
+
+func validateUpdateCredential(req credentialUpdateRequest) error {
+	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
+		return errors.New("name cannot be empty")
+	}
+	if req.Kind != nil && strings.TrimSpace(*req.Kind) == "" {
+		return errors.New("kind cannot be empty")
+	}
+	if req.Type != nil && strings.TrimSpace(*req.Type) == "" {
+		return errors.New("type cannot be empty")
+	}
+
+	return nil
+}
+
+func credentialMatchesSearch(item credentialRecord, needle string) bool {
+	fields := []string{item.ID, item.Name, item.Kind, item.Type, item.SubType}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), needle) {
+			return true
+		}
+	}
+
+	for key, value := range item.Metadata {
+		if strings.Contains(strings.ToLower(key), needle) {
+			return true
+		}
+		if strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
+			return true
+		}
+	}
+
+	for key, value := range item.Secret {
+		if strings.Contains(strings.ToLower(key), needle) {
+			return true
+		}
+		if strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
+			return true
+		}
+	}
+
+	return false
 }

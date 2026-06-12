@@ -16,7 +16,14 @@ It also includes a small authenticated surface for the capabilities it advertise
 - `GET /api/identity/orgs`
 - `GET /api/credentials`
 - `POST /api/credentials`
+- `GET /api/credentials/{id}`
+- `PUT /api/credentials/{id}`
+- `DELETE /api/credentials/{id}`
 - `GET /api/environments`
+- `POST /api/environments`
+- `GET /api/environments/{id}`
+- `PUT /api/environments/{id}`
+- `DELETE /api/environments/{id}`
 - `GET /api/workspaces`
 - `GET /api/connections`
 - `POST /api/connections`
@@ -41,6 +48,18 @@ The starter provider now exposes an authenticated in-memory Connections API for 
 - `GET`, `PUT`, and `DELETE /api/connections/{id}` fetch, update, and remove individual connections.
 
 Connection payloads accept both Meshery-style snake_case fields like `sub_type` and `credential_id` and camelCase variants like `subType` and `credentialId`.
+
+Credential collection requests support `page`, `pageSize`, `pagesize`, `search`, and `q` query parameters, and the list response includes both camelCase and snake_case pagination keys.
+
+Environment collection requests support the same pagination and search query parameters as credentials and connections, and the item endpoint now supports deletion.
+
+## Credentials CRUD
+
+Credentials are stored in-memory for development. The API supports create, list, read, update, and delete operations across `/api/credentials` and `/api/credentials/{id}` and accepts both `subType` and `sub_type`.
+
+## Environments CRUD
+
+Environments are also stored in-memory for development. The API seeds a default environment, supports full CRUD at `/api/environments` and `/api/environments/{id}`, and accepts both `organizationId` and `organization_id`.
 
 ## Run locally
 

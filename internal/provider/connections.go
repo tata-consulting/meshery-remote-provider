@@ -272,15 +272,7 @@ func (s *Server) handleListConnections(w http.ResponseWriter, r *http.Request) {
 		responseItems = append(responseItems, item.response())
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"page":        page,
-		"pageSize":    responsePageSize,
-		"page_size":   responsePageSize,
-		"totalCount":  total,
-		"total_count": total,
-		"data":        responseItems,
-		"connections": responseItems,
-	})
+	writeJSON(w, http.StatusOK, buildPaginatedResponse(page, responsePageSize, total, "connections", responseItems))
 }
 
 func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -16,6 +17,14 @@ type environmentRecord struct {
 	Metadata       map[string]any
 	CreatedAt      string
 	UpdatedAt      string
+}
+
+type environmentCreateRequest struct {
+	Name               string         `json:"name"`
+	Description        string         `json:"description"`
+	OrganizationID     string         `json:"organizationId"`
+	LegacyOrganization string         `json:"organization_id"`
+	Metadata           map[string]any `json:"metadata"`
 }
 
 type environmentStore struct {
@@ -69,6 +78,30 @@ func (s *environmentStore) get(id string) (environmentRecord, bool) {
 	return item, ok
 }
 
+func (s *environmentStore) create(req environmentCreateRequest) (environmentRecord, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	id, err := newResourceID()
+	if err != nil {
+		return environmentRecord{}, err
+	}
+
+	item := environmentRecord{
+		ID:             id,
+		Name:           strings.TrimSpace(req.Name),
+		Description:    strings.TrimSpace(req.Description),
+		OrganizationID: strings.TrimSpace(req.normalizedOrganizationID()),
+		Metadata:       cloneMap(req.Metadata),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.items[item.ID] = item
+	return item, nil
+}
+
 func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 	_, err := s.currentUser(r)
 	if err != nil {
@@ -76,21 +109,47 @@ func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := s.environments.list()
-	responseItems := make([]map[string]any, 0, len(items))
-	for _, item := range items {
-		responseItems = append(responseItems, item.response())
-	}
+	switch r.Method {
+	case http.MethodGet:
+		items := s.environments.list()
+		responseItems := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			responseItems = append(responseItems, item.response())
+		}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"page":         1,
-		"pageSize":     len(responseItems),
-		"page_size":    len(responseItems),
-		"totalCount":   len(responseItems),
-		"total_count":  len(responseItems),
-		"data":         responseItems,
-		"environments": responseItems,
-	})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"page":         1,
+			"pageSize":     len(responseItems),
+			"page_size":    len(responseItems),
+			"totalCount":   len(responseItems),
+			"total_count":  len(responseItems),
+			"data":         responseItems,
+			"environments": responseItems,
+		})
+	case http.MethodPost:
+		var req environmentCreateRequest
+		if err := decodeJSONBody(r.Body, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		if err := validateCreateEnvironment(req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		item, err := s.environments.create(req)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "unable to create environment"})
+			return
+		}
+
+		w.Header().Set("Location", "/api/environments/"+item.ID)
+		writeJSON(w, http.StatusCreated, item.response())
+	default:
+		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPost}, ", "))
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
 }
 
 func (s *Server) handleEnvironmentByID(w http.ResponseWriter, r *http.Request) {
@@ -130,4 +189,24 @@ func (e environmentRecord) response() map[string]any {
 	}
 
 	return payload
+}
+
+func (e environmentCreateRequest) normalizedOrganizationID() string {
+	if strings.TrimSpace(e.OrganizationID) != "" {
+		return e.OrganizationID
+	}
+
+	if strings.TrimSpace(e.LegacyOrganization) != "" {
+		return e.LegacyOrganization
+	}
+
+	return defaultOrganizationID
+}
+
+func validateCreateEnvironment(req environmentCreateRequest) error {
+	if strings.TrimSpace(req.Name) == "" {
+		return errors.New("name is required")
+	}
+
+	return nil
 }

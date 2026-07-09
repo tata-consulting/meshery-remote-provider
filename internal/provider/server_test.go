@@ -491,12 +491,12 @@ func TestEnvironmentCreate(t *testing.T) {
 
 	server := NewServer(LoadConfig())
 
-	req := authenticatedRequest(t, server, http.MethodPost, "/api/environments", `{
-		"name":"Staging Environment",
-		"description":"Pre-production workspace",
-		"organization_id":"7df34ef4-d478-44d6-a657-1db6c633f0cb",
-		"metadata":{"region":"us-east-1"}
-	}`)
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/environments", "{"+
+		"\"name\":\"Staging Environment\","+
+		"\"description\":\"Pre-production workspace\","+
+		"\"organization_id\":\""+defaultOrganizationID+"\","+
+		"\"metadata\":{\"region\":\"us-east-1\"}"+
+	"}")
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 

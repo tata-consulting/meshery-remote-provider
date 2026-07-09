@@ -198,6 +198,9 @@ func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		query := r.URL.Query()
 		page := parsePositiveInt(query.Get("page"), 1)
+		if page <= 0 {
+			page = 1
+		}
 		pageSize := parsePositiveInt(firstNonEmpty(query.Get("pageSize"), query.Get("pagesize")), 0)
 		search := firstNonEmpty(query.Get("search"), query.Get("q"))
 

@@ -31,9 +31,9 @@ It also includes a small authenticated surface for the capabilities it advertise
 - `PUT /api/connections/{id}`
 - `DELETE /api/connections/{id}`
 
-## What this scaffold is
+## What 
 
-This is a starter provider, not a full production identity platform. The login flow is intentionally lightweight so the repository starts with a working Meshery-facing contract:
+A full production identity platform. The login flow is intentionally lightweight so the repository starts with a working Meshery-facing contract:
 
 1. Meshery redirects the browser to `/login?source=<base64-meshery-callback-base-url>`.
 2. The provider issues a development token and provider session cookie.

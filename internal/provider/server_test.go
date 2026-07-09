@@ -552,12 +552,12 @@ func TestEnvironmentUpdate(t *testing.T) {
 	item := data[0].(map[string]any)
 	environmentID := item["id"].(string)
 
-	req = authenticatedRequest(t, server, http.MethodPut, "/api/environments/"+environmentID, `{
-		"name":"Default Environment Updated",
-		"description":"Updated description",
-		"organizationId":"7df34ef4-d478-44d6-a657-1db6c633f0cb",
-		"metadata":{"workspaceId":"f893c289-5587-4c54-a8ff-d291f626d6f5","provider":"remote","region":"us-west-2"}
-	}`)
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/environments/"+environmentID, "{"+
+		"\"name\":\"Default Environment Updated\","+
+		"\"description\":\"Updated description\","+
+		"\"organizationId\":\""+defaultOrganizationID+"\","+
+		"\"metadata\":{\"workspaceId\":\""+defaultWorkspaceID+"\",\"provider\":\"remote\",\"region\":\"us-west-2\"}"+
+	"}")
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 

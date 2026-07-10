@@ -1,6 +1,6 @@
 # Meshery Remote Provider
 
-Implementation of a Meshery Remote Provider for TCS Labs.
+Implementation of a [Meshery Remote Provider](https://docs.meshery.io/reference/extensibility/providers/) for TCS Labs.
 
 This repository provides the documented Meshery remote-provider entrypoints:
 

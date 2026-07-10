@@ -54,6 +54,9 @@ func TestCapabilitiesRoutes(t *testing.T) {
 		if !hasCapability(capabilities, "organizations", "/api/organizations") {
 			t.Fatalf("expected organizations capability for %s", path)
 		}
+		if !hasCapability(capabilities, "users", "/api/users") {
+			t.Fatalf("expected users capability for %s", path)
+		}
 	}
 }
 
@@ -978,6 +981,111 @@ func TestWorkspaceValidation(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 on invalid workspace update (empty name), got %d", rec.Code)
+	}
+}
+
+func TestUserListAndGet(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	// Create users to retrieve
+	user1 := `{"email":"alice@test.com","firstName":"Alice","lastName":"Smith","provider":"github","status":"active"}`
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/users", user1)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on user create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode user create response: %v", err)
+	}
+	userID := created["id"].(string)
+
+	// Test GET /api/users/{id}
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/users/"+userID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on user get, got %d", rec.Code)
+	}
+
+	var retrieved map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &retrieved); err != nil {
+		t.Fatalf("failed to decode user get response: %v", err)
+	}
+	if retrieved["email"] != "alice@test.com" {
+		t.Fatalf("unexpected email: %v", retrieved["email"])
+	}
+
+	// Create another user
+	user2 := `{"email":"bob@test.com","firstName":"Bob","lastName":"Jones","provider":"google","status":"active"}`
+	req = authenticatedRequest(t, server, http.MethodPost, "/api/users", user2)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on second user create, got %d", rec.Code)
+	}
+
+	// Test GET /api/users (list)
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/users", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on users list, got %d", rec.Code)
+	}
+
+	var list map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("failed to decode users list response: %v", err)
+	}
+	if list["totalCount"].(float64) != 2 {
+		t.Fatalf("expected 2 users, got %v", list["totalCount"])
+	}
+
+	// Test pagination
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/users?page=2&pageSize=1", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on paginated users list, got %d", rec.Code)
+	}
+
+	var page2 map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &page2); err != nil {
+		t.Fatalf("failed to decode paginated response: %v", err)
+	}
+	if page2["page"].(float64) != 2 {
+		t.Fatalf("expected page 2, got %v", page2["page"])
+	}
+	if len(page2["data"].([]any)) != 1 {
+		t.Fatalf("expected 1 item on page 2, got %d", len(page2["data"].([]any)))
+	}
+
+	// Test search
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/users?q=alice", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on user search, got %d", rec.Code)
+	}
+
+	var searchResults map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &searchResults); err != nil {
+		t.Fatalf("failed to decode search response: %v", err)
+	}
+	if searchResults["totalCount"].(float64) != 1 {
+		t.Fatalf("expected 1 search result, got %v", searchResults["totalCount"])
+	}
+
+	// Test get non-existent user
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/users/nonexistent", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on non-existent user, got %d", rec.Code)
 	}
 }
 

@@ -48,6 +48,9 @@ func TestCapabilitiesRoutes(t *testing.T) {
 		if !hasCapability(capabilities, "environments", "/api/environments") {
 			t.Fatalf("expected environments capability for %s", path)
 		}
+		if !hasCapability(capabilities, "workspaces", "/api/workspaces") {
+			t.Fatalf("expected workspaces capability for %s", path)
+		}
 	}
 }
 
@@ -710,6 +713,134 @@ func authenticatedRequest(t *testing.T, server *Server, method, path, body strin
 	req.Header.Set("Content-Type", "application/json")
 
 	return req
+}
+
+func TestWorkspacesCRUD(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	// Create workspace
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/workspaces", `{"name":"Test Workspace","organizationId":"org-123"}`)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on workspace create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode workspace create response: %v", err)
+	}
+
+	workspaceID := created["id"].(string)
+
+	// Get workspace
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/workspaces/"+workspaceID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on workspace get, got %d", rec.Code)
+	}
+
+	var retrieved map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &retrieved); err != nil {
+		t.Fatalf("failed to decode workspace get response: %v", err)
+	}
+	if retrieved["name"] != "Test Workspace" {
+		t.Fatalf("unexpected workspace name: %v", retrieved["name"])
+	}
+
+	// Update workspace
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/workspaces/"+workspaceID, `{"name":"Updated Workspace","description":"Updated description"}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on workspace update, got %d", rec.Code)
+	}
+
+	var updated map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("failed to decode workspace update response: %v", err)
+	}
+	if updated["name"] != "Updated Workspace" {
+		t.Fatalf("expected updated name, got %v", updated["name"])
+	}
+
+	// List workspaces
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/workspaces", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on workspaces list, got %d", rec.Code)
+	}
+
+	var list map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("failed to decode workspaces list response: %v", err)
+	}
+	if list["totalCount"].(float64) != 1 {
+		t.Fatalf("expected 1 workspace, got %v", list["totalCount"])
+	}
+
+	// Delete workspace
+	req = authenticatedRequest(t, server, http.MethodDelete, "/api/workspaces/"+workspaceID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on workspace delete, got %d", rec.Code)
+	}
+
+	// Verify deletion
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/workspaces/"+workspaceID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on deleted workspace lookup, got %d", rec.Code)
+	}
+}
+
+func TestWorkspaceValidation(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	// Test missing name
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/workspaces", `{"organizationId":"org-123"}`)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid workspace create (missing name), got %d", rec.Code)
+	}
+
+	// Test missing organizationId
+	req = authenticatedRequest(t, server, http.MethodPost, "/api/workspaces", `{"name":"Test Workspace"}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid workspace create (missing organizationId), got %d", rec.Code)
+	}
+
+	// Test valid creation
+	req = authenticatedRequest(t, server, http.MethodPost, "/api/workspaces", `{"name":"Valid Workspace","organizationId":"org-123"}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on valid workspace create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode workspace create response: %v", err)
+	}
+
+	// Test invalid update (empty name)
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/workspaces/"+created["id"].(string), `{"name":""}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid workspace update (empty name), got %d", rec.Code)
+	}
 }
 
 func hasCapability(capabilities []any, feature, endpoint string) bool {

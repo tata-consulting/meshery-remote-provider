@@ -249,39 +249,6 @@ func (s *Server) handleOrganizations(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-<<<<<<< HEAD
-func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
-=======
-func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
->>>>>>> origin/master
-	_, err := s.currentUser(r)
-	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"page":       1,
-<<<<<<< HEAD
-		"pageSize":   0,
-		"totalCount": 0,
-		"data":       []any{},
-	})
-}
-
-=======
-		"pageSize":   1,
-		"totalCount": 1,
-		"data": []map[string]any{{
-			"id":             defaultWorkspaceID,
-			"name":           "Default Workspace",
-			"description":    "Starter workspace payload for Meshery Remote Provider development.",
-			"organizationId": defaultOrganizationID,
-		}},
-	})
-}
->>>>>>> origin/master
-
 func (s *Server) currentUser(r *http.Request) (claims, error) {
 	token := bearerToken(r)
 	if token == "" {

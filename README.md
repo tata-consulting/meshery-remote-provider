@@ -1,6 +1,6 @@
 # Meshery Remote Provider
 
-Starter implementation of a Meshery Remote Provider for Tata Consulting.
+Starter implementation of a [Meshery Remote Provider](https://docs.meshery.io/reference/extensibility/providers/) for Tata Consulting.
 
 This repository provides the documented Meshery remote-provider entrypoints:
 

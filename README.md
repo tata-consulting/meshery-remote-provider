@@ -1,6 +1,6 @@
 # Meshery Remote Provider
 
-Starter implementation of a Meshery Remote Provider for Tata Consulting.
+Implementation of a Meshery Remote Provider for TCS Labs.
 
 This repository provides the documented Meshery remote-provider entrypoints:
 

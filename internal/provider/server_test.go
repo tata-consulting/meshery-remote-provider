@@ -51,6 +51,9 @@ func TestCapabilitiesRoutes(t *testing.T) {
 		if !hasCapability(capabilities, "workspaces", "/api/workspaces") {
 			t.Fatalf("expected workspaces capability for %s", path)
 		}
+		if !hasCapability(capabilities, "organizations", "/api/organizations") {
+			t.Fatalf("expected organizations capability for %s", path)
+		}
 	}
 }
 
@@ -797,6 +800,141 @@ func TestWorkspacesCRUD(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 on deleted workspace lookup, got %d", rec.Code)
+	}
+}
+
+func TestOrganizationsCRUD(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	// Create organization
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/organizations", `{"name":"Test Org","country":"US","region":"East","description":"Test Description","owner":"user-123","metadata":{}}`)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on organization create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode organization create response: %v", err)
+	}
+
+	orgID := created["id"].(string)
+
+	// Get organization
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/organizations/"+orgID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on organization get, got %d", rec.Code)
+	}
+
+	var retrieved map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &retrieved); err != nil {
+		t.Fatalf("failed to decode organization get response: %v", err)
+	}
+	if retrieved["name"] != "Test Org" {
+		t.Fatalf("unexpected organization name: %v", retrieved["name"])
+	}
+
+	// Update organization
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/organizations/"+orgID, `{"name":"Updated Org","country":"CA"}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on organization update, got %d", rec.Code)
+	}
+
+	var updated map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("failed to decode organization update response: %v", err)
+	}
+	if updated["name"] != "Updated Org" {
+		t.Fatalf("expected updated name, got %v", updated["name"])
+	}
+
+	// List organizations
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/organizations", "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on organizations list, got %d", rec.Code)
+	}
+
+	var list map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("failed to decode organizations list response: %v", err)
+	}
+	if list["totalCount"].(float64) != 1 {
+		t.Fatalf("expected 1 organization, got %v", list["totalCount"])
+	}
+
+	// Delete organization
+	req = authenticatedRequest(t, server, http.MethodDelete, "/api/organizations/"+orgID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on organization delete, got %d", rec.Code)
+	}
+
+	// Verify deletion
+	req = authenticatedRequest(t, server, http.MethodGet, "/api/organizations/"+orgID, "")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on deleted organization lookup, got %d", rec.Code)
+	}
+}
+
+func TestOrganizationValidation(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	// Test missing required fields
+	testCases := []struct {
+		name   string
+		body   string
+		field  string
+	}{
+		{"missing name", `{"country":"US","region":"East","description":"Desc","owner":"user-123","metadata":{}}`, "name"},
+		{"missing country", `{"name":"Org","region":"East","description":"Desc","owner":"user-123","metadata":{}}`, "country"},
+		{"missing region", `{"name":"Org","country":"US","description":"Desc","owner":"user-123","metadata":{}}`, "region"},
+		{"missing description", `{"name":"Org","country":"US","region":"East","owner":"user-123","metadata":{}}`, "description"},
+		{"missing owner", `{"name":"Org","country":"US","region":"East","description":"Desc","metadata":{}}`, "owner"},
+		{"missing metadata", `{"name":"Org","country":"US","region":"East","description":"Desc","owner":"user-123"}`, "metadata"},
+	}
+
+	for _, tc := range testCases {
+		req := authenticatedRequest(t, server, http.MethodPost, "/api/organizations", tc.body)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 on organization create (missing %s), got %d", tc.field, rec.Code)
+		}
+	}
+
+	// Test valid creation
+	req := authenticatedRequest(t, server, http.MethodPost, "/api/organizations", `{"name":"Valid Org","country":"US","region":"East","description":"Valid Desc","owner":"user-123","metadata":{}}`)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on valid organization create, got %d", rec.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode organization create response: %v", err)
+	}
+
+	// Test invalid update (empty name)
+	req = authenticatedRequest(t, server, http.MethodPut, "/api/organizations/"+created["id"].(string), `{"name":""}`)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid organization update (empty name), got %d", rec.Code)
 	}
 }
 

@@ -32,6 +32,7 @@ type Server struct {
 	environments *environmentStore
 	workspaces   *workspaceStore
 	organizations *organizationStore
+	userStore    *UserStore
 }
 
 func NewServer(cfg Config) *Server {
@@ -43,6 +44,7 @@ func NewServer(cfg Config) *Server {
 		environments: newEnvironmentStore(),
 		workspaces:   newWorkspaceStore(),
 		organizations: newOrganizationStore(),
+		userStore:    NewUserStore(),
 	}
 
 	server.routes()
@@ -62,7 +64,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /login", s.handleLogin)
 	s.mux.HandleFunc("GET /logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/identity/users/profile", s.handleProfile)
-	s.mux.HandleFunc("GET /api/users", s.handleUsers)
+	s.mux.HandleFunc("GET /api/users", s.HandleListUsers)
+	s.mux.HandleFunc("POST /api/users", s.HandleCreateUser)
+	s.mux.HandleFunc("GET /api/users/{id}", s.HandleGetUser)
+	s.mux.HandleFunc("PUT /api/users/{id}", s.HandleUpdateUser)
+	s.mux.HandleFunc("DELETE /api/users/{id}", s.HandleDeleteUser)
 	s.mux.HandleFunc("GET /api/identity/orgs", s.handleOrganizations)
 	s.mux.HandleFunc("GET /api/organizations", s.handleOrganizations)
 	s.mux.HandleFunc("POST /api/organizations", s.handleOrganizations)

@@ -30,6 +30,7 @@ type Server struct {
 	connections  *connectionStore
 	credentials  *credentialStore
 	environments *environmentStore
+	workspaces   *workspaceStore
 }
 
 func NewServer(cfg Config) *Server {
@@ -39,6 +40,7 @@ func NewServer(cfg Config) *Server {
 		connections:  newConnectionStore(),
 		credentials:  newCredentialStore(),
 		environments: newEnvironmentStore(),
+		workspaces:   newWorkspaceStore(),
 	}
 
 	server.routes()
@@ -71,6 +73,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/environments/{id}", s.handleEnvironmentByID)
 	s.mux.HandleFunc("DELETE /api/environments/{id}", s.handleEnvironmentByID)
 	s.mux.HandleFunc("GET /api/workspaces", s.handleWorkspaces)
+	s.mux.HandleFunc("POST /api/workspaces", s.handleWorkspaces)
+	s.mux.HandleFunc("GET /api/workspaces/{id}", s.handleWorkspaceByID)
+	s.mux.HandleFunc("PUT /api/workspaces/{id}", s.handleWorkspaceByID)
+	s.mux.HandleFunc("DELETE /api/workspaces/{id}", s.handleWorkspaceByID)
 	s.mux.HandleFunc("GET /api/connections", s.handleConnections)
 	s.mux.HandleFunc("POST /api/connections", s.handleConnections)
 	s.mux.HandleFunc("GET /api/connections/{id}", s.handleConnectionByID)
@@ -95,6 +101,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			"/api/environments",
 			"/api/environments/{id}",
 			"/api/workspaces",
+			"/api/workspaces/{id}",
 			"/api/connections",
 			"/api/connections/{id}",
 		},
@@ -238,26 +245,6 @@ func (s *Server) handleOrganizations(w http.ResponseWriter, r *http.Request) {
 			"name":        "Tata Consulting",
 			"description": "Starter organization payload for Meshery Remote Provider development.",
 			"slug":        "tata-consulting",
-		}},
-	})
-}
-
-func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
-	_, err := s.currentUser(r)
-	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"page":       1,
-		"pageSize":   1,
-		"totalCount": 1,
-		"data": []map[string]any{{
-			"id":             defaultWorkspaceID,
-			"name":           "Default Workspace",
-			"description":    "Starter workspace payload for Meshery Remote Provider development.",
-			"organizationId": defaultOrganizationID,
 		}},
 	})
 }

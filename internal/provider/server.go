@@ -25,20 +25,22 @@ type claims struct {
 }
 
 type Server struct {
-	cfg         Config
-	mux         *http.ServeMux
-	connections *connectionStore
-	credentials *credentialStore
-	workspaces  *workspaceStore
+	cfg          Config
+	mux          *http.ServeMux
+	connections  *connectionStore
+	credentials  *credentialStore
+	environments *environmentStore
+	workspaces   *workspaceStore
 }
 
 func NewServer(cfg Config) *Server {
 	server := &Server{
-		cfg:         cfg,
-		mux:         http.NewServeMux(),
-		connections: newConnectionStore(),
-		credentials: newCredentialStore(),
-		workspaces:  newWorkspaceStore(),
+		cfg:          cfg,
+		mux:          http.NewServeMux(),
+		connections:  newConnectionStore(),
+		credentials:  newCredentialStore(),
+		environments: newEnvironmentStore(),
+		workspaces:   newWorkspaceStore(),
 	}
 
 	server.routes()
@@ -62,7 +64,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/identity/orgs", s.handleOrganizations)
 	s.mux.HandleFunc("GET /api/credentials", s.handleCredentials)
 	s.mux.HandleFunc("POST /api/credentials", s.handleCredentials)
+	s.mux.HandleFunc("GET /api/credentials/{id}", s.handleCredentialByID)
+	s.mux.HandleFunc("PUT /api/credentials/{id}", s.handleCredentialByID)
+	s.mux.HandleFunc("DELETE /api/credentials/{id}", s.handleCredentialByID)
 	s.mux.HandleFunc("GET /api/environments", s.handleEnvironments)
+	s.mux.HandleFunc("POST /api/environments", s.handleEnvironments)
+	s.mux.HandleFunc("GET /api/environments/{id}", s.handleEnvironmentByID)
+	s.mux.HandleFunc("PUT /api/environments/{id}", s.handleEnvironmentByID)
+	s.mux.HandleFunc("DELETE /api/environments/{id}", s.handleEnvironmentByID)
 	s.mux.HandleFunc("GET /api/workspaces", s.handleWorkspaces)
 	s.mux.HandleFunc("POST /api/workspaces", s.handleWorkspaces)
 	s.mux.HandleFunc("GET /api/workspaces/{id}", s.handleWorkspaceByID)
@@ -88,7 +97,9 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			"/api/users",
 			"/api/identity/orgs",
 			"/api/credentials",
+			"/api/credentials/{id}",
 			"/api/environments",
+			"/api/environments/{id}",
 			"/api/workspaces",
 			"/api/workspaces/{id}",
 			"/api/connections",
@@ -230,7 +241,7 @@ func (s *Server) handleOrganizations(w http.ResponseWriter, r *http.Request) {
 		"pageSize":   1,
 		"totalCount": 1,
 		"data": []map[string]any{{
-			"id":          "7df34ef4-d478-44d6-a657-1db6c633f0cb",
+			"id":          defaultOrganizationID,
 			"name":        "Tata Consulting",
 			"description": "Starter organization payload for Meshery Remote Provider development.",
 			"slug":        "tata-consulting",
@@ -238,7 +249,11 @@ func (s *Server) handleOrganizations(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+<<<<<<< HEAD
 func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
+=======
+func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
+>>>>>>> origin/master
 	_, err := s.currentUser(r)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
@@ -247,12 +262,25 @@ func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"page":       1,
+<<<<<<< HEAD
 		"pageSize":   0,
 		"totalCount": 0,
 		"data":       []any{},
 	})
 }
 
+=======
+		"pageSize":   1,
+		"totalCount": 1,
+		"data": []map[string]any{{
+			"id":             defaultWorkspaceID,
+			"name":           "Default Workspace",
+			"description":    "Starter workspace payload for Meshery Remote Provider development.",
+			"organizationId": defaultOrganizationID,
+		}},
+	})
+}
+>>>>>>> origin/master
 
 func (s *Server) currentUser(r *http.Request) (claims, error) {
 	token := bearerToken(r)
@@ -299,7 +327,7 @@ func (s *Server) userPayload(currentUser claims) map[string]any {
 		"region":         map[string]any{},
 		"organizations": map[string]any{
 			"organizationsWithRoles": []map[string]any{{
-				"id":   "7df34ef4-d478-44d6-a657-1db6c633f0cb",
+				"id":   defaultOrganizationID,
 				"name": "Tata Consulting",
 				"role": "organization admin",
 			}},
@@ -314,9 +342,9 @@ func (s *Server) userPayload(currentUser claims) map[string]any {
 			"anonymousUsageStats":       true,
 			"dashboardPreferences":      map[string]any{},
 			"remoteProviderPreferences": map[string]any{},
-			"selectedOrganizationId":    "7df34ef4-d478-44d6-a657-1db6c633f0cb",
+			"selectedOrganizationId":    defaultOrganizationID,
 			"selectedWorkspaceForOrganizations": map[string]string{
-				"7df34ef4-d478-44d6-a657-1db6c633f0cb": "f893c289-5587-4c54-a8ff-d291f626d6f5",
+				defaultOrganizationID: defaultWorkspaceID,
 			},
 			"updatedAt":                 now,
 			"usersExtensionPreferences": map[string]any{},

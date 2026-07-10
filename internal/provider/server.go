@@ -31,6 +31,7 @@ type Server struct {
 	credentials  *credentialStore
 	environments *environmentStore
 	workspaces   *workspaceStore
+	organizations *organizationStore
 }
 
 func NewServer(cfg Config) *Server {
@@ -41,6 +42,7 @@ func NewServer(cfg Config) *Server {
 		credentials:  newCredentialStore(),
 		environments: newEnvironmentStore(),
 		workspaces:   newWorkspaceStore(),
+		organizations: newOrganizationStore(),
 	}
 
 	server.routes()
@@ -62,6 +64,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/identity/users/profile", s.handleProfile)
 	s.mux.HandleFunc("GET /api/users", s.handleUsers)
 	s.mux.HandleFunc("GET /api/identity/orgs", s.handleOrganizations)
+	s.mux.HandleFunc("GET /api/organizations", s.handleOrganizations)
+	s.mux.HandleFunc("POST /api/organizations", s.handleOrganizations)
+	s.mux.HandleFunc("GET /api/organizations/{id}", s.handleOrganizationByID)
+	s.mux.HandleFunc("PUT /api/organizations/{id}", s.handleOrganizationByID)
+	s.mux.HandleFunc("DELETE /api/organizations/{id}", s.handleOrganizationByID)
 	s.mux.HandleFunc("GET /api/credentials", s.handleCredentials)
 	s.mux.HandleFunc("POST /api/credentials", s.handleCredentials)
 	s.mux.HandleFunc("GET /api/credentials/{id}", s.handleCredentialByID)
@@ -96,6 +103,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			"/api/identity/users/profile",
 			"/api/users",
 			"/api/identity/orgs",
+			"/api/organizations",
+			"/api/organizations/{id}",
 			"/api/credentials",
 			"/api/credentials/{id}",
 			"/api/environments",
@@ -130,7 +139,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		"capabilities": []map[string]string{
 			{"feature": "users-profile", "endpoint": "/api/identity/users/profile"},
 			{"feature": "users-identity", "endpoint": "/api/users"},
-			{"feature": "organizations", "endpoint": "/api/identity/orgs"},
+			{"feature": "organizations", "endpoint": "/api/organizations"},
 			{"feature": "credentials", "endpoint": "/api/credentials"},
 			{"feature": "environments", "endpoint": "/api/environments"},
 			{"feature": "workspaces", "endpoint": "/api/workspaces"},
@@ -226,26 +235,6 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 		"pageSize":   1,
 		"totalCount": 1,
 		"data":       []any{s.userPayload(currentUser)},
-	})
-}
-
-func (s *Server) handleOrganizations(w http.ResponseWriter, r *http.Request) {
-	_, err := s.currentUser(r)
-	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"page":       1,
-		"pageSize":   1,
-		"totalCount": 1,
-		"data": []map[string]any{{
-			"id":          defaultOrganizationID,
-			"name":        "Tata Consulting",
-			"description": "Starter organization payload for Meshery Remote Provider development.",
-			"slug":        "tata-consulting",
-		}},
 	})
 }
 

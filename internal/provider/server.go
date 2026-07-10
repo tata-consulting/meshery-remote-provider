@@ -29,6 +29,7 @@ type Server struct {
 	mux         *http.ServeMux
 	connections *connectionStore
 	credentials *credentialStore
+	workspaces  *workspaceStore
 }
 
 func NewServer(cfg Config) *Server {
@@ -37,6 +38,7 @@ func NewServer(cfg Config) *Server {
 		mux:         http.NewServeMux(),
 		connections: newConnectionStore(),
 		credentials: newCredentialStore(),
+		workspaces:  newWorkspaceStore(),
 	}
 
 	server.routes()
@@ -62,6 +64,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/credentials", s.handleCredentials)
 	s.mux.HandleFunc("GET /api/environments", s.handleEnvironments)
 	s.mux.HandleFunc("GET /api/workspaces", s.handleWorkspaces)
+	s.mux.HandleFunc("POST /api/workspaces", s.handleWorkspaces)
+	s.mux.HandleFunc("GET /api/workspaces/{id}", s.handleWorkspaceByID)
+	s.mux.HandleFunc("PUT /api/workspaces/{id}", s.handleWorkspaceByID)
+	s.mux.HandleFunc("DELETE /api/workspaces/{id}", s.handleWorkspaceByID)
 	s.mux.HandleFunc("GET /api/connections", s.handleConnections)
 	s.mux.HandleFunc("POST /api/connections", s.handleConnections)
 	s.mux.HandleFunc("GET /api/connections/{id}", s.handleConnectionByID)
@@ -84,6 +90,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			"/api/credentials",
 			"/api/environments",
 			"/api/workspaces",
+			"/api/workspaces/{id}",
 			"/api/connections",
 			"/api/connections/{id}",
 		},
@@ -246,25 +253,6 @@ func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
-	_, err := s.currentUser(r)
-	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"page":       1,
-		"pageSize":   1,
-		"totalCount": 1,
-		"data": []map[string]any{{
-			"id":             "f893c289-5587-4c54-a8ff-d291f626d6f5",
-			"name":           "Default Workspace",
-			"description":    "Starter workspace payload for Meshery Remote Provider development.",
-			"organizationId": "7df34ef4-d478-44d6-a657-1db6c633f0cb",
-		}},
-	})
-}
 
 func (s *Server) currentUser(r *http.Request) (claims, error) {
 	token := bearerToken(r)

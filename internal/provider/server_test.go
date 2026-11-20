@@ -1103,3 +1103,157 @@ func hasCapability(capabilities []any, feature, endpoint string) bool {
 
 	return false
 }
+
+
+func TestResolveBackToLoginURL(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		source   string
+		expected string
+	}{
+		{
+			name:     "valid http localhost source",
+			source:   base64.RawURLEncoding.EncodeToString([]byte("http://localhost:9081")),
+			expected: "http://localhost:9081/user/login",
+		},
+		{
+			name:     "valid https domain source with trailing slash",
+			source:   base64.RawURLEncoding.EncodeToString([]byte("https://meshery.example.com/")),
+			expected: "https://meshery.example.com/user/login",
+		},
+		{
+			name:     "valid standard URL encoding",
+			source:   base64.URLEncoding.EncodeToString([]byte("https://meshery.example.com/subpath")),
+			expected: "https://meshery.example.com/subpath/user/login",
+		},
+		{
+			name:     "empty source falls back to root",
+			source:   "",
+			expected: "/",
+		},
+		{
+			name:     "invalid base64 falls back to root",
+			source:   "not-valid-base64!@#$",
+			expected: "/",
+		},
+		{
+			name:     "javascript URI scheme rejected and falls back to root",
+			source:   base64.RawURLEncoding.EncodeToString([]byte("javascript:alert(1)")),
+			expected: "/",
+		},
+		{
+			name:     "data URI scheme rejected and falls back to root",
+			source:   base64.RawURLEncoding.EncodeToString([]byte("data:text/html,<html>alert(1)</html>")),
+			expected: "/",
+		},
+		{
+			name:     "ftp scheme rejected and falls back to root",
+			source:   base64.RawURLEncoding.EncodeToString([]byte("ftp://evil.com/login")),
+			expected: "/",
+		},
+		{
+			name:     "protocol-relative URL rejected and falls back to root",
+			source:   base64.RawURLEncoding.EncodeToString([]byte("//evil.com/login")),
+			expected: "/",
+		},
+		{
+			name:     "missing host falls back to root",
+			source:   base64.RawURLEncoding.EncodeToString([]byte("http:///no-host")),
+			expected: "/",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveBackToLoginURL(tc.source)
+			if got != tc.expected {
+				t.Errorf("resolveBackToLoginURL(%q) = %q; want %q", tc.source, got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestHandleLoginFailureBrowserVsAPI(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(LoadConfig())
+
+	t.Run("browser request on invalid source renders HTML error with root fallback", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/login?source=bad-source", nil)
+		req.Header.Set("Accept", "text/html,application/xhtml+xml")
+		rec := httptest.NewRecorder()
+
+		server.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", rec.Code)
+		}
+
+		contentType := rec.Header().Get("Content-Type")
+		if !strings.Contains(contentType, "text/html") {
+			t.Errorf("expected Content-Type text/html, got %q", contentType)
+		}
+
+		body := rec.Body.String()
+		if !strings.Contains(body, "Back to login") {
+			t.Errorf("expected body to contain 'Back to login'")
+		}
+		if !strings.Contains(body, `href="/"`) {
+			t.Errorf("expected body to contain fallback href='/'")
+		}
+	})
+
+	t.Run("browser request with valid source and upstream error renders HTML with Meshery login link", func(t *testing.T) {
+		mesheryBase := "https://meshery.example.com"
+		rawSource := base64.RawURLEncoding.EncodeToString([]byte(mesheryBase))
+
+		req := httptest.NewRequest(http.MethodGet, "/login?source="+url.QueryEscape(rawSource)+"&error=access_denied&error_description=User+declined+authorization", nil)
+		req.Header.Set("Accept", "text/html,application/xhtml+xml")
+		rec := httptest.NewRecorder()
+
+		server.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", rec.Code)
+		}
+
+		body := rec.Body.String()
+		if !strings.Contains(body, "Back to login") {
+			t.Errorf("expected body to contain 'Back to login'")
+		}
+		expectedHref := `href="https://meshery.example.com/user/login"`
+		if !strings.Contains(body, expectedHref) {
+			t.Errorf("expected body to contain %s", expectedHref)
+		}
+		if !strings.Contains(body, "User declined authorization") {
+			t.Errorf("expected body to contain error description")
+		}
+	})
+
+	t.Run("API request on invalid source returns JSON error without HTML", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/login?source=bad-source", nil)
+		req.Header.Set("Accept", "application/json")
+		rec := httptest.NewRecorder()
+
+		server.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", rec.Code)
+		}
+
+		contentType := rec.Header().Get("Content-Type")
+		if !strings.Contains(contentType, "application/json") {
+			t.Errorf("expected Content-Type application/json, got %q", contentType)
+		}
+
+		var payload map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("failed to decode JSON response: %v", err)
+		}
+		if payload["error"] == "" {
+			t.Errorf("expected non-empty error in JSON response")
+		}
+	})
+}

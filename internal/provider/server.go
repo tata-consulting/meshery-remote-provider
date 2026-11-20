@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"strings"
@@ -145,6 +146,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		"capabilities": []map[string]string{
 			{"feature": "users-profile", "endpoint": "/api/identity/users/profile"},
 			{"feature": "users-identity", "endpoint": "/api/users"},
+			{"feature": "users", "endpoint": "/api/users"},
 			{"feature": "organizations", "endpoint": "/api/organizations"},
 			{"feature": "credentials", "endpoint": "/api/credentials"},
 			{"feature": "environments", "endpoint": "/api/environments"},
@@ -165,21 +167,32 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	callbackBase, err := decodeSource(r.URL.Query().Get("source"))
+	rawSource := r.URL.Query().Get("source")
+
+	if errParam := r.URL.Query().Get("error"); errParam != "" {
+		errDesc := r.URL.Query().Get("error_description")
+		if errDesc == "" {
+			errDesc = errParam
+		}
+		s.respondLoginFailure(w, r, http.StatusUnauthorized, errDesc, rawSource)
+		return
+	}
+
+	callbackBase, err := decodeSource(rawSource)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid source query parameter"})
+		s.respondLoginFailure(w, r, http.StatusBadRequest, "invalid source query parameter", rawSource)
 		return
 	}
 
 	token, err := s.mintToken()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "unable to mint token"})
+		s.respondLoginFailure(w, r, http.StatusInternalServerError, "unable to mint token", rawSource)
 		return
 	}
 
 	sessionID, err := randomString(32)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "unable to create session"})
+		s.respondLoginFailure(w, r, http.StatusInternalServerError, "unable to create session", rawSource)
 		return
 	}
 
@@ -193,7 +206,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	callbackURL, err := buildMesheryCallbackURL(callbackBase)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid decoded source URL"})
+		s.respondLoginFailure(w, r, http.StatusBadRequest, "invalid decoded source URL", rawSource)
 		return
 	}
 
@@ -206,6 +219,121 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 	http.Redirect(w, r, callbackURL.String(), http.StatusFound)
 }
+
+func (s *Server) respondLoginFailure(w http.ResponseWriter, r *http.Request, statusCode int, message string, rawSource string) {
+	backURL := resolveBackToLoginURL(rawSource)
+
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.WriteHeader(statusCode)
+
+		_ = loginErrorTemplate.Execute(w, map[string]string{
+			"Title":        "Login Failed",
+			"Message":      message,
+			"BackToLogin":  backURL,
+			"ProviderName": s.cfg.ProviderName,
+		})
+		return
+	}
+
+	writeJSON(w, statusCode, map[string]string{
+		"error": message,
+	})
+}
+
+func resolveBackToLoginURL(encodedSource string) string {
+	if encodedSource == "" {
+		return "/"
+	}
+
+	decoded, err := decodeSource(encodedSource)
+	if err != nil {
+		return "/"
+	}
+
+	parsed, err := url.Parse(decoded)
+	if err != nil {
+		return "/"
+	}
+
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "/"
+	}
+
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/user/login"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+
+	return parsed.String()
+}
+
+var loginErrorTemplate = template.Must(template.New("login_error").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{.Title}} - {{.ProviderName}}</title>
+	<style>
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+			background-color: #f8fafc;
+			color: #1e293b;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			min-height: 100vh;
+			margin: 0;
+			padding: 1rem;
+		}
+		.card {
+			background: #ffffff;
+			border: 1px solid #e2e8f0;
+			border-radius: 8px;
+			box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+			max-width: 440px;
+			width: 100%;
+			padding: 2rem;
+			text-align: center;
+		}
+		h1 {
+			font-size: 1.25rem;
+			color: #dc2626;
+			margin-top: 0;
+			margin-bottom: 0.75rem;
+		}
+		p {
+			font-size: 0.95rem;
+			color: #64748b;
+			margin-bottom: 1.5rem;
+			line-height: 1.5;
+		}
+		.btn {
+			display: inline-block;
+			background-color: #00b39f;
+			color: #ffffff;
+			text-decoration: none;
+			font-weight: 500;
+			font-size: 0.95rem;
+			padding: 0.625rem 1.25rem;
+			border-radius: 6px;
+			transition: background-color 0.15s ease-in-out;
+		}
+		.btn:hover {
+			background-color: #008f7f;
+		}
+	</style>
+</head>
+<body>
+	<div class="card">
+		<h1>{{.Title}}</h1>
+		<p>{{.Message}}</p>
+		<a class="btn" href="{{.BackToLogin}}">Back to login</a>
+	</div>
+</body>
+</html>
+`))
 
 func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {
 	http.SetCookie(w, &http.Cookie{

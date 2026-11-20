@@ -1104,7 +1104,6 @@ func hasCapability(capabilities []any, feature, endpoint string) bool {
 	return false
 }
 
-
 func TestResolveBackToLoginURL(t *testing.T) {
 	t.Parallel()
 
